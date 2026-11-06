@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
+import '../data/onboarding_store.dart';
 import '../data/project_repo.dart';
 import '../data/project_store.dart';
 import '../models/models.dart';
 import 'about_page.dart';
 import 'editor_page.dart';
+import 'onboarding_page.dart';
 import 'player_page.dart';
 import 'widgets.dart';
 
@@ -18,6 +20,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   bool _booted = false;
+  bool _autoGuideOpened = false;
 
   @override
   void initState() {
@@ -30,6 +33,16 @@ class _HomePageState extends State<HomePage> {
     _booted = true;
     final repo = ProjectRepo.instance;
     if (repo.loading) await repo.init();
+    if (!mounted) return;
+    final seen = await OnboardingStore.hasSeen();
+    if (!mounted || seen || _autoGuideOpened) return;
+    _autoGuideOpened = true;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => const OnboardingPage(),
+      ),
+    );
   }
 
   Future<void> _createProject() async {
@@ -244,7 +257,7 @@ class _HomePageState extends State<HomePage> {
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(builder: (_) => const AboutPage()),
                 ),
-                tooltip: '关于作者',
+                tooltip: '作者简介',
                 icon: const Icon(Icons.person_outline, color: AppColors.muted, size: 20),
               ),
             ],
@@ -476,32 +489,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _showGuide(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('怎么用', style: TextStyle(fontSize: 17)),
-        content: const SingleChildScrollView(
-          child: Text(
-            '1. 新建作品，进入编辑器。\n'
-            '2. 开始：作品标题、封面、开场 BGM。\n'
-            '3. 剧情：切背景；角色可站最左/左/中/右/最右 5 个点位；'
-            '道具在独立列表里添加，不占角色格；还能控制 BGM、音效和无选项时的自动跳转。\n'
-            '4. 对话：写台词，需要分支时填 A/B/C/D 并选择跳转节点。\n'
-            '5. 结束：设置结局画面和收尾音频。\n'
-            '6. 右上角播放键可直接试玩，在播放器里存档/读档。\n\n'
-            '提示：新建节点会自动继承当前舞台，删掉节点前请先改掉指向它的分支。'
-            '作者页在首页右上角的人像按钮里。',
-            style: TextStyle(fontSize: 13, color: AppColors.muted, height: 1.7),
-          ),
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('知道了'),
-          ),
-        ],
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => const OnboardingPage(),
       ),
     );
   }

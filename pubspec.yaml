@@ -1,7 +1,7 @@
 name: starcanvas
 description: "星绘工坊 - 安卓视觉小说编辑器与播放器"
 publish_to: 'none'
-version: 1.1.0+2
+version: 1.1.2+4
 
 environment:
   sdk: ^3.13.7
@@ -32,3 +32,5 @@ dependency_overrides:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/images/avatar.jpg

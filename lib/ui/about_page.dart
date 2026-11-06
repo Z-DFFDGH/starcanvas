@@ -8,7 +8,7 @@ import 'widgets.dart';
 class AboutPage extends StatelessWidget {
   const AboutPage({super.key});
 
-  static const version = '1.1.0';
+  static const version = '1.1.2';
   static const repoUrl = 'https://github.com/Z-DFFDGH/starcanvas';
 
   Future<void> _open(BuildContext context, String url) async {
@@ -40,7 +40,9 @@ class AboutPage extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _topBar(context),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 2),
+                      _pageHeading(),
+                      const SizedBox(height: 18),
                       _hero(),
                       const SizedBox(height: 18),
                       _quote(),
@@ -180,7 +182,7 @@ class AboutPage extends StatelessWidget {
             border: Border.all(color: AppColors.line),
           ),
           child: const Text(
-            'ABOUT',
+            'PROFILE',
             style: TextStyle(
               fontSize: 9,
               letterSpacing: 2,
@@ -188,6 +190,45 @@ class AboutPage extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _pageHeading() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          width: 4,
+          height: 30,
+          decoration: BoxDecoration(
+            color: AppColors.accent,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '作者简介',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'AUTHOR PROFILE · 关于哈基蚌',
+              style: TextStyle(
+                fontSize: 9.5,
+                letterSpacing: 1.6,
+                color: AppColors.muted.withValues(alpha: 0.9),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -216,12 +257,16 @@ class AboutPage extends StatelessWidget {
             ],
           ),
           alignment: Alignment.center,
-          child: const Text(
-            '蚌',
-            style: TextStyle(
-              fontSize: 40,
-              fontWeight: FontWeight.w800,
-              color: AppColors.text,
+          child: Padding(
+            padding: const EdgeInsets.all(3),
+            child: ClipOval(
+              child: Image.asset(
+                'assets/images/avatar.jpg',
+                width: 90,
+                height: 90,
+                fit: BoxFit.cover,
+                semanticLabel: '作者头像',
+              ),
             ),
           ),
         ),
