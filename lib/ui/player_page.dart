@@ -38,7 +38,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
   VnNode? _node;
   String? _bg;
-  List<StageSlot> _slots = List.generate(4, (_) => StageSlot());
+  List<StageSlot> _slots = List.generate(5, (_) => StageSlot());
+  List<PropSlot> _props = [];
   String? _bgmId;
 
   String _fullText = '';
@@ -46,6 +47,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   List<int> _runes = const [];
   int _shownCount = 0;
   Timer? _typer;
+  Timer? _autoTimer;
   bool _ended = false;
 
   AudioPlayer? _bgm;
@@ -81,6 +83,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _typer?.cancel();
+    _autoTimer?.cancel();
     _bgmToken++;
     _bgm?.dispose();
     _sfx?.dispose();
@@ -93,9 +96,11 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
+      _autoTimer?.cancel();
       _bgm?.pause();
     } else if (state == AppLifecycleState.resumed && !_ended) {
       _bgm?.resume();
+      _scheduleAutoAdvance();
     }
   }
 
@@ -103,9 +108,11 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
   void _enterNode(VnNode node, {bool initial = false, bool notify = true}) {
     _typer?.cancel();
+    _autoTimer?.cancel();
     _node = node;
     if (node.backgroundId != null) _bg = node.backgroundId;
     _slots = node.slots.map((s) => s.copy()).toList();
+    _props = node.props.map((p) => p.copy()).toList();
     _fullText = node.dialogue;
     _runes = _fullText.runes.toList();
     _shownCount = 0;
@@ -173,7 +180,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
   void _startTyping() {
     _typer?.cancel();
-    if (_runes.isEmpty) return;
+    if (_runes.isEmpty) {
+      _scheduleAutoAdvance();
+      return;
+    }
     _typer = Timer.periodic(_typingTick, (timer) {
       if (!mounted) {
         timer.cancel();
@@ -183,7 +193,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         if (_shownCount < _runes.length) _shownCount++;
         _shownText = String.fromCharCodes(_runes.take(_shownCount));
       });
-      if (_shownCount >= _runes.length) timer.cancel();
+      if (_shownCount >= _runes.length) {
+        timer.cancel();
+        _scheduleAutoAdvance();
+      }
     });
   }
 
@@ -193,12 +206,27 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       _shownCount = _runes.length;
       _shownText = _fullText;
     });
+    _scheduleAutoAdvance();
+  }
+
+  /// 无选项时按工程设置自动进入下一节点；打字过程中不计时。
+  void _scheduleAutoAdvance() {
+    _autoTimer?.cancel();
+    final node = _node;
+    if (node == null || _ended || _typing) return;
+    if (node.hasChoices) return;
+    final ms = widget.project.autoAdvanceMs;
+    if (ms <= 0) return;
+    _autoTimer = Timer(Duration(milliseconds: ms), () {
+      if (mounted) _advance();
+    });
   }
 
   void _advance() {
     if (_ended) return;
     final node = _node;
     if (node == null) return;
+    _autoTimer?.cancel();
     if (_typing) {
       _completeTyping();
       return;
@@ -218,6 +246,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   }
 
   void _choose(Choice choice) {
+    _autoTimer?.cancel();
     if (_typing) {
       _completeTyping();
       return;
@@ -257,7 +286,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     } catch (_) {}
     _bgmId = null;
     _bg = null;
-    _slots = List.generate(4, (_) => StageSlot());
+    _slots = List.generate(5, (_) => StageSlot());
+    _props = [];
     if (!mounted) return;
     _enterNode(widget.project.startNode, initial: true);
   }
@@ -270,6 +300,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
   Future<void> _openSaves({required bool load}) async {
     if (_node == null) return;
+    _autoTimer?.cancel();
     final result = await showModalBottomSheet<_SaveTap>(
       context: context,
       isScrollControlled: true,
@@ -282,9 +313,14 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         saveMode: !load,
       ),
     );
-    if (!mounted || result == null) return;
+    if (!mounted) return;
+    if (result == null) {
+      _scheduleAutoAdvance();
+      return;
+    }
     if (result.save) {
       await _saveToSlot(result.slot);
+      if (mounted) _scheduleAutoAdvance();
     } else if (result.state != null) {
       await _loadState(result.state!);
     }
@@ -311,6 +347,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         nodeId: node.id,
         backgroundId: _bg,
         slots: _slots.map((s) => s.copy()).toList(),
+        props: _props.map((p) => p.copy()).toList(),
         bgmId: _bgmId,
         snippet: snippet.trim(),
         savedAt: DateTime.now().millisecondsSinceEpoch,
@@ -332,6 +369,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       return;
     }
     _typer?.cancel();
+    _autoTimer?.cancel();
     _bgmToken++;
     try {
       await _bgm?.stop();
@@ -342,6 +380,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       _node = node;
       _bg = state.backgroundId;
       _slots = state.slots.map((s) => s.copy()).toList();
+      _props = state.props.map((p) => p.copy()).toList();
       _fullText = node.dialogue;
       _runes = _fullText.runes.toList();
       _shownCount = 0;
@@ -387,6 +426,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                 project: widget.project,
                 backgroundId: _bg,
                 slots: _slots,
+                props: _props,
               ),
             ),
             if (!_ended && node != null) _topBar(),

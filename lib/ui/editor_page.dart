@@ -30,6 +30,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   final _nodeTitleCtrl = TextEditingController();
   final _dialogueCtrl = TextEditingController();
   final _endingCtrl = TextEditingController();
+  final _autoCtrl = TextEditingController();
 
   Timer? _saveTimer;
   bool _saving = false;
@@ -49,6 +50,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     _nodeTitleCtrl.text = _node.title;
     _dialogueCtrl.text = _node.dialogue;
     _endingCtrl.text = _project.ending.text;
+    _autoCtrl.text = _formatSeconds(_project.autoAdvanceMs);
   }
 
   @override
@@ -59,6 +61,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     _nodeTitleCtrl.dispose();
     _dialogueCtrl.dispose();
     _endingCtrl.dispose();
+    _autoCtrl.dispose();
     AudioPreview.stop();
     super.dispose();
   }
@@ -796,11 +799,61 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                   _scheduleSave();
                 },
               ),
+              const Divider(height: 26),
+              _label('无选项时自动跳转'),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _autoCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: _decoration('0 表示关闭').copyWith(
+                        suffixText: '秒',
+                        helperText: '台词显示完后等待多久进入下一节点；有选项时不会自动跳。',
+                        helperMaxLines: 2,
+                      ),
+                      onChanged: (value) {
+                        final seconds = double.tryParse(value.trim()) ?? 0;
+                        setState(() {
+                          _project.autoAdvanceMs =
+                              (seconds.clamp(0, 60) * 1000).round();
+                        });
+                        _scheduleSave();
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                children: [
+                  for (final sec in const [0, 1, 2, 3, 5])
+                    ActionChip(
+                      visualDensity: VisualDensity.compact,
+                      label: Text(sec == 0 ? '关闭' : '${sec}s',
+                          style: const TextStyle(fontSize: 11)),
+                      onPressed: () {
+                        setState(() {
+                          _project.autoAdvanceMs = sec * 1000;
+                          _autoCtrl.text = sec == 0 ? '' : '$sec';
+                        });
+                        _scheduleSave();
+                      },
+                    ),
+                ],
+              ),
             ],
           ),
         ),
       ],
     );
+  }
+
+  String _formatSeconds(int ms) {
+    if (ms <= 0) return '';
+    final v = ms / 1000;
+    return v == v.roundToDouble() ? '${v.round()}' : v.toStringAsFixed(1);
   }
 
   Widget _slotCard(VnNode node, int index) {
@@ -846,9 +899,9 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
           GestureDetector(
             onTap: () async {
               final picked = await _pickImageAsset(
-                title: '选择${StageView.positionLabels[index]}点位的素材',
-                kinds: const {AssetKind.character, AssetKind.item},
-                uploadKinds: const [AssetKind.character, AssetKind.item],
+                title: '选择${StageView.positionLabels[index]}点位的角色',
+                kinds: const {AssetKind.character},
+                uploadKinds: const [AssetKind.character],
               );
               if (picked == null || !mounted) return;
               setState(() {
@@ -890,9 +943,9 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
               TextButton(
                 onPressed: () async {
                   final picked = await _pickImageAsset(
-                    title: '选择${StageView.positionLabels[index]}点位的素材',
-                    kinds: const {AssetKind.character, AssetKind.item},
-                    uploadKinds: const [AssetKind.character, AssetKind.item],
+                    title: '选择${StageView.positionLabels[index]}点位的角色',
+                    kinds: const {AssetKind.character},
+                    uploadKinds: const [AssetKind.character],
                   );
                   if (picked == null || !mounted) return;
                   setState(() {
@@ -931,13 +984,13 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _uploadAndPlace(AssetKind kind) async {
-    final asset = await _uploadImage(kind);
+  Future<void> _uploadCharacter() async {
+    final asset = await _uploadImage(AssetKind.character);
     if (asset == null || !mounted) return;
     final node = _node;
     final empty = node.slots.indexWhere((s) => s.isEmpty);
     if (empty < 0) {
-      showToast(context, '四个点位都满了，先清除一个再上传');
+      showToast(context, '五个角色点位都满了，先清除一个再上传');
       return;
     }
     setState(() {
@@ -947,12 +1000,154 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     _scheduleSave();
   }
 
+  Future<void> _addProp(VnNode node) async {
+    final asset = await _pickImageAsset(
+      title: '选择道具小图',
+      kinds: const {AssetKind.item},
+      uploadKinds: const [AssetKind.item],
+    );
+    if (asset == null || !mounted) return;
+    final used = node.props.map((p) => p.position).toSet();
+    var pos = 0;
+    while (used.contains(pos) && pos < 4) {
+      pos++;
+    }
+    setState(() {
+      node.props.add(PropSlot(assetId: asset.id, position: pos));
+    });
+    _scheduleSave();
+  }
+
+  void _setPropPosition(VnNode node, PropSlot prop, int position) {
+    setState(() {
+      final old = prop.position;
+      for (final other in node.props) {
+        if (!identical(other, prop) && other.position == position) {
+          other.position = old;
+        }
+      }
+      prop.position = position;
+    });
+    _scheduleSave();
+  }
+
+  Widget _propRow(VnNode node, int index) {
+    final prop = node.props[index];
+    final asset = _project.asset(prop.assetId);
+    final file = asset == null ? null : ProjectStore.fileOf(_project, asset);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(8, 6, 4, 6),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Row(
+        children: [
+          Opacity(
+            opacity: prop.visible ? 1 : 0.35,
+            child: AssetThumb(
+              file: file,
+              size: 40,
+              radius: 8,
+              icon: Icons.auto_awesome_outlined,
+              fit: BoxFit.contain,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  asset?.displayName ?? '道具',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11.5),
+                ),
+                DropdownButtonHideUnderline(
+                  child: DropdownButton<int>(
+                    value: prop.position.clamp(0, 4),
+                    isDense: true,
+                    isExpanded: true,
+                    style: const TextStyle(fontSize: 11, color: AppColors.muted),
+                    items: [
+                      for (var i = 0; i < StageView.positionLabels.length; i++)
+                        DropdownMenuItem(value: i, child: Text(StageView.positionLabels[i])),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) _setPropPosition(node, prop, value);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          GestureDetector(
+            onTap: () {
+              setState(() => prop.visible = !prop.visible);
+              _scheduleSave();
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Icon(
+                prop.visible ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                size: 17,
+                color: prop.visible ? AppColors.primary : AppColors.muted,
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: () {
+              setState(() => node.props.removeAt(index));
+              _scheduleSave();
+            },
+            child: const Padding(
+              padding: EdgeInsets.all(6),
+              child: Icon(Icons.close, size: 16, color: AppColors.muted),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _propsSection(VnNode node) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Divider(height: 26),
+        Row(
+          children: [
+            const Expanded(
+              child: Text('道具图层（独立列表）',
+                  style: TextStyle(fontSize: 12, color: AppColors.muted)),
+            ),
+            TextButton.icon(
+              onPressed: () => _addProp(node),
+              icon: const Icon(Icons.add_photo_alternate_outlined, size: 16),
+              label: const Text('添加道具', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+        if (node.props.isEmpty)
+          Text(
+            '道具不占用角色点位，可以单独添加多个，每个道具自己选位置。',
+            style: TextStyle(fontSize: 10.5, color: AppColors.muted.withValues(alpha: 0.9)),
+          )
+        else
+          for (var i = 0; i < node.props.length; i++) _propRow(node, i),
+      ],
+    );
+  }
+
   Widget _storyModule() {
     final node = _node;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _moduleHeader(Icons.auto_stories_outlined, '剧情模块', '背景 · 角色/道具四点位 · 音乐'),
+        _moduleHeader(Icons.auto_stories_outlined, '剧情模块', '背景 · 角色五点位 · 独立道具 · 音乐'),
         AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -989,7 +1184,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                 children: [
                   const Expanded(
                     child: Text(
-                      '角色与道具共用同一个舞台的 4 个点位。',
+                      '角色用 5 个点位（含中间）；道具在下面的独立列表里。',
                       style: TextStyle(fontSize: 10, color: AppColors.muted),
                     ),
                   ),
@@ -1009,37 +1204,25 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                 ],
               ),
               const SizedBox(height: 6),
-              GridView.count(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisCount: 2,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 1.55,
-                children: [
-                  for (var i = 0; i < 4; i++) _slotCard(node, i),
-                ],
+              SizedBox(
+                height: 116,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: 5,
+                  separatorBuilder: (_, _) => const SizedBox(width: 8),
+                  itemBuilder: (_, i) => SizedBox(
+                    width: 118,
+                    child: _slotCard(node, i),
+                  ),
+                ),
               ),
               const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _uploadAndPlace(AssetKind.character),
-                      icon: const Icon(Icons.person_add_alt_1, size: 16),
-                      label: const Text('上传角色', style: TextStyle(fontSize: 12)),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _uploadAndPlace(AssetKind.item),
-                      icon: const Icon(Icons.image_outlined, size: 16),
-                      label: const Text('上传道具', style: TextStyle(fontSize: 12)),
-                    ),
-                  ),
-                ],
+              OutlinedButton.icon(
+                onPressed: _uploadCharacter,
+                icon: const Icon(Icons.person_add_alt_1, size: 16),
+                label: const Text('上传角色并放到第一个空点位', style: TextStyle(fontSize: 12)),
               ),
+              _propsSection(node),
               const Divider(height: 26),
               _label('BGM 控制'),
               SegmentedButton<BgmAction>(

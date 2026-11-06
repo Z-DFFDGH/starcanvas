@@ -83,32 +83,32 @@ class SampleProject {
 
     final n1 = makeNode('开场', '黄昏的操场空无一人。\n只有风穿过铁丝网，发出轻轻的嗡鸣。')
       ..backgroundId = bgSunsetAsset.id
-      ..slots[1] = StageSlot(assetId: aoiAsset.id)
+      ..slots[2] = StageSlot(assetId: aoiAsset.id)
       ..next = null;
 
     final n2 = makeNode('相遇', '「你也留下来看星星吗？」\n她抱着膝盖，坐在看台最高的一级台阶上。')
       ..backgroundId = bgSunsetAsset.id
       ..slots[1] = StageSlot(assetId: aoiAsset.id)
-      ..slots[2] = StageSlot(assetId: hikariAsset.id)
+      ..slots[3] = StageSlot(assetId: hikariAsset.id)
       ..bgmAction = BgmAction.keep;
 
     final n3 = makeNode('观星', '我们并排躺在草地上，数着永远数不完的星星。\n「那颗最亮的，叫什么名字？」')
       ..backgroundId = bgNightAsset.id
-      ..slots[0] = StageSlot(assetId: starAsset.id)
+      ..props.add(PropSlot(assetId: starAsset.id, position: 0))
       ..slots[1] = StageSlot(assetId: aoiAsset.id)
-      ..slots[2] = StageSlot(assetId: hikariAsset.id)
+      ..slots[3] = StageSlot(assetId: hikariAsset.id)
       ..sfxId = sfxAsset.id
       ..bgmAction = BgmAction.keep;
 
     final n4 = makeNode('分别', '她挥了挥手，背影一点点融进暮色里。\n「明天……还会来吗？」')
       ..backgroundId = bgDuskAsset.id
-      ..slots[1] = StageSlot(assetId: aoiAsset.id)
+      ..slots[2] = StageSlot(assetId: aoiAsset.id)
       ..bgmAction = BgmAction.keep;
 
     final n5 = makeNode('约定', '夜风把她的声音吹得很远，又很清晰。\n「明天，还在这里见。」')
       ..backgroundId = bgNightAsset.id
       ..slots[1] = StageSlot(assetId: aoiAsset.id)
-      ..slots[2] = StageSlot(assetId: hikariAsset.id)
+      ..slots[3] = StageSlot(assetId: hikariAsset.id)
       ..bgmAction = BgmAction.keep;
 
     n1.next = n2.id;

@@ -67,9 +67,13 @@ void main() {
       }
     });
 
-    test('每个节点最多 4 个有效分支', () {
+    test('每个节点 5 个角色点位、道具位置合法、最多 4 个有效分支', () {
       for (final node in project.nodes) {
-        expect(node.slots.length, 4);
+        expect(node.slots.length, 5);
+        for (final prop in node.props) {
+          expect(prop.position, inInclusiveRange(0, 4));
+          expect(project.asset(prop.assetId)?.kind, AssetKind.item);
+        }
         expect(node.activeChoices.length, lessThanOrEqualTo(4));
       }
     });

@@ -88,7 +88,7 @@ class AssetRef {
       );
 }
 
-/// 四个固定点位：0 最左、1 左、2 右、3 最右。
+/// 角色固定点位：0 最左、1 左、2 中、3 右、4 最右。
 class StageSlot {
   String? assetId;
   bool visible;
@@ -108,6 +108,34 @@ class StageSlot {
         assetId: j['assetId'] as String?,
         visible: (j['visible'] as bool?) ?? true,
       );
+}
+
+/// 独立道具图层：不占用角色点位，每个道具自己选一个位置。
+class PropSlot {
+  String? assetId;
+  bool visible;
+  int position;
+
+  PropSlot({this.assetId, this.visible = true, this.position = 2});
+
+  bool get isEmpty => assetId == null || assetId!.isEmpty;
+
+  PropSlot copy() => PropSlot(assetId: assetId, visible: visible, position: position);
+
+  Map<String, dynamic> toJson() => {
+        if (assetId != null) 'assetId': assetId,
+        'visible': visible,
+        'position': position,
+      };
+
+  factory PropSlot.fromJson(Map<String, dynamic> j) {
+    final p = (j['position'] as num?)?.toInt() ?? 2;
+    return PropSlot(
+      assetId: j['assetId'] as String?,
+      visible: (j['visible'] as bool?) ?? true,
+      position: p.clamp(0, 4),
+    );
+  }
 }
 
 class Choice {
@@ -145,8 +173,11 @@ class VnNode {
   /// null 表示沿用上一个节点的背景；首个节点请在编辑器里设置。
   String? backgroundId;
 
-  /// 长度固定为 4，保存的是“绝对舞台状态”。
+  /// 长度固定为 5，保存的是“绝对舞台状态”：最左/左/中/右/最右。
   final List<StageSlot> slots;
+
+  /// 独立道具列表，不占用角色点位；每个道具可单独选择显示位置。
+  final List<PropSlot> props;
 
   /// 最多 4 个分支；文本为空的分支会被忽略。
   final List<Choice> choices;
@@ -164,12 +195,14 @@ class VnNode {
     this.dialogue = '',
     this.backgroundId,
     List<StageSlot>? slots,
+    List<PropSlot>? props,
     List<Choice>? choices,
     this.next,
     this.bgmAction = BgmAction.keep,
     this.bgmId,
     this.sfxId,
-  })  : slots = slots ?? List.generate(4, (_) => StageSlot()),
+  })  : slots = slots ?? List.generate(5, (_) => StageSlot()),
+        props = props ?? <PropSlot>[],
         choices = choices ?? <Choice>[];
 
   bool get hasChoices => activeChoices.isNotEmpty;
@@ -183,6 +216,7 @@ class VnNode {
     String? backgroundId,
     bool clearBackground = false,
     List<StageSlot>? slots,
+    List<PropSlot>? props,
     List<Choice>? choices,
     String? next,
     bool clearNext = false,
@@ -198,6 +232,7 @@ class VnNode {
         dialogue: dialogue ?? this.dialogue,
         backgroundId: clearBackground ? null : (backgroundId ?? this.backgroundId),
         slots: slots ?? this.slots.map((s) => s.copy()).toList(),
+        props: props ?? this.props.map((p) => p.copy()).toList(),
         choices: choices ?? this.choices.map((c) => Choice(text: c.text, target: c.target)).toList(),
         next: clearNext ? null : (next ?? this.next),
         bgmAction: bgmAction ?? this.bgmAction,
@@ -211,6 +246,7 @@ class VnNode {
         title: newTitle,
         backgroundId: backgroundId,
         slots: slots.map((s) => s.copy()).toList(),
+        props: props.map((p) => p.copy()).toList(),
         bgmAction: BgmAction.keep,
         bgmId: bgmId,
         next: null,
@@ -222,6 +258,7 @@ class VnNode {
         'dialogue': dialogue,
         if (backgroundId != null) 'backgroundId': backgroundId,
         'slots': slots.map((s) => s.toJson()).toList(),
+        'props': props.map((p) => p.toJson()).toList(),
         'choices': choices.map((c) => c.toJson()).toList(),
         if (next != null) 'next': next,
         'bgmAction': bgmAction.name,
@@ -232,12 +269,19 @@ class VnNode {
   factory VnNode.fromJson(Map<String, dynamic> j) {
     final slots = <StageSlot>[];
     final rawSlots = (j['slots'] as List?) ?? const [];
-    for (var i = 0; i < 4; i++) {
-      if (i < rawSlots.length && rawSlots[i] is Map) {
-        slots.add(StageSlot.fromJson(Map<String, dynamic>.from(rawSlots[i] as Map)));
+    // v1 只有 4 个点位（最左/左/右/最右）：在第 2 位插入空位，旧工程自动升级到 5 点位。
+    final legacyFour = rawSlots.length == 4;
+    for (var i = 0; i < 5; i++) {
+      final src = legacyFour ? (i < 2 ? i : (i == 2 ? -1 : i - 1)) : i;
+      if (src >= 0 && src < rawSlots.length && rawSlots[src] is Map) {
+        slots.add(StageSlot.fromJson(Map<String, dynamic>.from(rawSlots[src] as Map)));
       } else {
         slots.add(StageSlot());
       }
+    }
+    final props = <PropSlot>[];
+    for (final raw in (j['props'] as List?) ?? const []) {
+      if (raw is Map) props.add(PropSlot.fromJson(Map<String, dynamic>.from(raw)));
     }
     final choices = <Choice>[];
     for (final raw in (j['choices'] as List?) ?? const []) {
@@ -249,6 +293,7 @@ class VnNode {
       dialogue: (j['dialogue'] as String?) ?? '',
       backgroundId: j['backgroundId'] as String?,
       slots: slots,
+      props: props,
       choices: choices,
       next: j['next'] as String?,
       bgmAction: BgmAction.values.firstWhere(
@@ -286,6 +331,10 @@ class VnProject {
   String title;
   String? coverId;
   String? openingBgmId;
+
+  /// 无选项时自动跳到下一节点的等待时间；0 表示不自动跳转。
+  int autoAdvanceMs;
+
   final List<VnNode> nodes;
   EndingConfig ending;
   final int createdAt;
@@ -299,6 +348,7 @@ class VnProject {
     required this.title,
     this.coverId,
     this.openingBgmId,
+    this.autoAdvanceMs = 0,
     required this.nodes,
     required this.ending,
     required this.createdAt,
@@ -360,6 +410,9 @@ class VnProject {
       for (final s in n.slots) {
         add(s.assetId);
       }
+      for (final p in n.props) {
+        add(p.assetId);
+      }
     }
     return ids;
   }
@@ -383,6 +436,11 @@ class VnProject {
           s.visible = true;
         }
       }
+      n.props.removeWhere((p) {
+        if (p.assetId != assetId) return false;
+        p.assetId = null;
+        return true;
+      });
     }
     assets.removeWhere((a) => a.id == assetId);
   }
@@ -391,11 +449,12 @@ class VnProject {
 
   String toJsonString({bool pretty = true}) {
     final map = <String, dynamic>{
-      'version': 1,
+      'version': 2,
       'id': id,
       'title': title,
       if (coverId != null) 'coverId': coverId,
       if (openingBgmId != null) 'openingBgmId': openingBgmId,
+      'autoAdvanceMs': autoAdvanceMs,
       'nodes': nodes.map((n) => n.toJson()).toList(),
       'ending': ending.toJson(),
       'createdAt': createdAt,
@@ -419,11 +478,12 @@ class VnProject {
     for (final raw in (j['assets'] as List?) ?? const []) {
       if (raw is Map) assets.add(AssetRef.fromJson(Map<String, dynamic>.from(raw)));
     }
-    return VnProject(
+    final project = VnProject(
       id: (j['id'] as String?) ?? newId('p'),
       title: (j['title'] as String?) ?? '未命名作品',
       coverId: j['coverId'] as String?,
       openingBgmId: j['openingBgmId'] as String?,
+      autoAdvanceMs: (j['autoAdvanceMs'] as num?)?.toInt() ?? 0,
       nodes: nodes,
       ending: EndingConfig.fromJson(
         j['ending'] is Map ? Map<String, dynamic>.from(j['ending'] as Map) : const {},
@@ -432,6 +492,23 @@ class VnProject {
       updatedAt: (j['updatedAt'] as num?)?.toInt() ?? 0,
       assets: assets,
     );
+    // v1 的角色点位列里可能混着道具图：迁移到独立道具列表，释放角色格子。
+    for (final n in project.nodes) {
+      for (var i = 0; i < n.slots.length; i++) {
+        final slot = n.slots[i];
+        final asset = project.asset(slot.assetId);
+        if (asset != null && asset.kind == AssetKind.item) {
+          n.props.add(PropSlot(
+            assetId: slot.assetId,
+            visible: slot.visible,
+            position: i.clamp(0, 4),
+          ));
+          slot.assetId = null;
+          slot.visible = true;
+        }
+      }
+    }
+    return project;
   }
 
   factory VnProject.fromJsonString(String source) =>
@@ -445,6 +522,7 @@ class SaveState {
   final String nodeId;
   final String? backgroundId;
   final List<StageSlot> slots;
+  final List<PropSlot> props;
   final String? bgmId;
   final String snippet;
   final int savedAt;
@@ -455,6 +533,7 @@ class SaveState {
     required this.nodeId,
     required this.backgroundId,
     required this.slots,
+    this.props = const [],
     required this.bgmId,
     required this.snippet,
     required this.savedAt,
@@ -466,6 +545,7 @@ class SaveState {
         'nodeId': nodeId,
         if (backgroundId != null) 'backgroundId': backgroundId,
         'slots': slots.map((s) => s.toJson()).toList(),
+        'props': props.map((p) => p.toJson()).toList(),
         if (bgmId != null) 'bgmId': bgmId,
         'snippet': snippet,
         'savedAt': savedAt,
@@ -474,17 +554,26 @@ class SaveState {
 
   factory SaveState.fromJson(Map<String, dynamic> j) {
     final slots = <StageSlot>[];
-    for (final raw in (j['slots'] as List?) ?? const []) {
-      if (raw is Map) slots.add(StageSlot.fromJson(Map<String, dynamic>.from(raw)));
+    final rawSlots = (j['slots'] as List?) ?? const [];
+    final legacyFour = rawSlots.length == 4;
+    for (var i = 0; i < 5; i++) {
+      final src = legacyFour ? (i < 2 ? i : (i == 2 ? -1 : i - 1)) : i;
+      if (src >= 0 && src < rawSlots.length && rawSlots[src] is Map) {
+        slots.add(StageSlot.fromJson(Map<String, dynamic>.from(rawSlots[src] as Map)));
+      } else {
+        slots.add(StageSlot());
+      }
     }
-    while (slots.length < 4) {
-      slots.add(StageSlot());
+    final props = <PropSlot>[];
+    for (final raw in (j['props'] as List?) ?? const []) {
+      if (raw is Map) props.add(PropSlot.fromJson(Map<String, dynamic>.from(raw)));
     }
     return SaveState(
       slot: (j['slot'] as num?)?.toInt() ?? 1,
       nodeId: (j['nodeId'] as String?) ?? '',
       backgroundId: j['backgroundId'] as String?,
       slots: slots,
+      props: props,
       bgmId: j['bgmId'] as String?,
       snippet: (j['snippet'] as String?) ?? '',
       savedAt: (j['savedAt'] as num?)?.toInt() ?? 0,

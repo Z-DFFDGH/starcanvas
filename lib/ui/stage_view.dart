@@ -7,11 +7,13 @@ import '../data/project_store.dart';
 import '../models/models.dart';
 
 /// 舞台渲染：编辑器预览和播放器共用同一套点位/缩放规则。
-/// 四个点位 x 中心：最左 9% · 左 30% · 右 70% · 最右 91%。
+/// 角色五个点位 x 中心：最左 9% · 左 29.5% · 中 50% · 右 70.5% · 最右 91%。
+/// 道具是独立图层，可各自选点位，不占用角色格。
 class StageView extends StatelessWidget {
   final VnProject project;
   final String? backgroundId;
   final List<StageSlot> slots;
+  final List<PropSlot> props;
   final bool showPlaceholders;
 
   const StageView({
@@ -19,11 +21,12 @@ class StageView extends StatelessWidget {
     required this.project,
     required this.backgroundId,
     required this.slots,
+    this.props = const [],
     this.showPlaceholders = false,
   });
 
-  static const positions = [0.09, 0.30, 0.70, 0.91];
-  static const positionLabels = ['最左', '左', '右', '最右'];
+  static const positions = [0.09, 0.295, 0.50, 0.705, 0.91];
+  static const positionLabels = ['最左', '左', '中', '右', '最右'];
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +50,15 @@ class StageView extends StatelessWidget {
                 )
               else
                 const _StageFallback(),
-              for (var i = 0; i < 4; i++)
+              for (final prop in props)
+                _prop(
+                  project: project,
+                  prop: prop,
+                  width: w,
+                  height: h,
+                  itemHeight: itemHeight,
+                ),
+              for (var i = 0; i < 5; i++)
                 _slot(
                   project: project,
                   slot: slots.length > i ? slots[i] : StageSlot(),
@@ -55,10 +66,9 @@ class StageView extends StatelessWidget {
                   width: w,
                   height: h,
                   charHeight: charHeight,
-                  itemHeight: itemHeight,
                 ),
               if (showPlaceholders)
-                for (var i = 0; i < 4; i++)
+                for (var i = 0; i < 5; i++)
                   if (slots.length <= i || slots[i].assetId == null)
                     Positioned(
                       left: w * positions[i] - 30,
@@ -97,27 +107,56 @@ class StageView extends StatelessWidget {
     required double width,
     required double height,
     required double charHeight,
-    required double itemHeight,
   }) {
     final asset = project.asset(slot.assetId);
     if (asset == null || !slot.visible) return const SizedBox.shrink();
-    final isItem = asset.kind == AssetKind.item;
-    final targetHeight = isItem ? itemHeight : charHeight;
     final double ratio;
     if (asset.width != null && asset.height != null && asset.height! > 0) {
       ratio = asset.width! / asset.height!;
     } else {
-      ratio = isItem ? 1.0 : 0.56;
+      ratio = 0.56;
     }
-    final targetWidth = targetHeight * ratio;
+    final targetWidth = charHeight * ratio;
     final centerX = width * positions[index];
     final left = centerX - targetWidth / 2;
-    final top = isItem ? height * 0.55 - targetHeight / 2 : height - targetHeight;
     return Positioned(
       left: left,
-      top: top,
+      top: height - charHeight,
       width: targetWidth,
-      height: targetHeight,
+      height: charHeight,
+      child: Image.file(
+        ProjectStore.fileOf(project, asset),
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.medium,
+        errorBuilder: (context, error, stack) => const SizedBox.shrink(),
+      ),
+    );
+  }
+
+  Widget _prop({
+    required VnProject project,
+    required PropSlot prop,
+    required double width,
+    required double height,
+    required double itemHeight,
+  }) {
+    final asset = project.asset(prop.assetId);
+    if (asset == null || !prop.visible) return const SizedBox.shrink();
+    final double ratio;
+    if (asset.width != null && asset.height != null && asset.height! > 0) {
+      ratio = asset.width! / asset.height!;
+    } else {
+      ratio = 1.0;
+    }
+    final targetWidth = itemHeight * ratio;
+    final centerX = width * positions[prop.position.clamp(0, 4)];
+    final left = centerX - targetWidth / 2;
+    return Positioned(
+      left: left,
+      top: height * 0.55 - itemHeight / 2,
+      width: targetWidth,
+      height: itemHeight,
       child: Image.file(
         ProjectStore.fileOf(project, asset),
         fit: BoxFit.contain,
@@ -171,6 +210,7 @@ class StagePreviewCard extends StatelessWidget {
             project: project,
             backgroundId: node.backgroundId,
             slots: node.slots,
+            props: node.props,
             showPlaceholders: true,
           ),
         ),
