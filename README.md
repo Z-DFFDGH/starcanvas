@@ -6,6 +6,8 @@
 
 ![Android](https://img.shields.io/badge/Android-7.0%2B-3DDC84) ![Flutter](https://img.shields.io/badge/Flutter-3.47-02569B) ![License](https://img.shields.io/badge/license-MIT-blue)
 
+在线仓库：<https://github.com/Z-DFFDGH/starcanvas>
+
 ---
 
 ## 1. 它有什么
@@ -72,7 +74,11 @@ build/app/outputs/flutter-apk/app-release.apk
 
 ### 从源码构建
 
-需要 Flutter 3.47+、Android SDK（platform 36、build-tools 36）和 JDK 17。
+需要 Flutter 3.47+、Android SDK（platform 36、build-tools 36）和 JDK 17，**不需要安装 NDK**。
+
+```bash
+git clone https://github.com/Z-DFFDGH/starcanvas.git
+```
 
 ```bash
 cd starcanvas

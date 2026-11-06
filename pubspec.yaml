@@ -24,5 +24,10 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   path_provider_platform_interface: ^2.1.3
 
+# path_provider_android 2.3.x 改用 JNI 原生实现，会强制 Android NDK/CMake；
+# 这里固定到最后一个纯 Kotlin 版本，保持轻量构建。
+dependency_overrides:
+  path_provider_android: 2.2.23
+
 flutter:
   uses-material-design: true
